@@ -1,0 +1,486 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 10.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[     18062,        477]
+NotebookOptionsPosition[     17285,        445]
+NotebookOutlinePosition[     17640,        461]
+CellTagsIndexPosition[     17597,        458]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["EL solver monitor", "Title",
+ CellChangeTimes->{{3.63628801765667*^9, 3.636288024992751*^9}}],
+
+Cell["\<\
+A note book to monitor the EL trimmed polynomial solver as it runs. The code \
+in this notebook depends on ELSolver.nb and the code in EL examples.
+
+The following function will produce a pretty panel that can be used to watch \
+these parameters during the optimisation.
+
+It optionally lets you take a peek at what the current best solution \
+predicts, compared with the true future behaviour of the system. It\
+\[CloseCurlyQuote]s interesting for getting a feel for what the algorithm is \
+exploring. Note that this can slow down the search considerably. Various \
+variables in this function are updated by the optimiser\[CloseCurlyQuote]s \
+step monitor every few hundred iterations, which is unclean but works well \
+enough.\
+\>", "Text",
+ CellChangeTimes->{{3.6362880286157293`*^9, 3.6362880422570553`*^9}, {
+   3.6362880728012323`*^9, 3.6362880788888187`*^9}, {3.6362926230894623`*^9, 
+   3.636292623403689*^9}, 3.640520924361792*^9}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"makeNMProgressPanel", "[", "]"}], ":=", "\[IndentingNewLine]", 
+  RowBox[{"(", 
+   RowBox[{
+    RowBox[{"showPrediction", "=", "False"}], ";", "\[IndentingNewLine]", 
+    RowBox[{"Dynamic", "[", "\[IndentingNewLine]", 
+     RowBox[{"Panel", "[", 
+      RowBox[{"Grid", "[", 
+       RowBox[{"{", 
+        RowBox[{"(*", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"\"\<Show prediction (slow):\>\"", ",", 
+            RowBox[{"Checkbox", "[", 
+             RowBox[{"Dynamic", "[", "showPrediction", "]"}], "]"}]}], "}"}], 
+          ","}], "*)"}], 
+        RowBox[{"{", "\[IndentingNewLine]", 
+         RowBox[{
+          RowBox[{"Quiet", "@", 
+           RowBox[{"ListPlot", "[", 
+            RowBox[{
+             RowBox[{"If", "[", 
+              RowBox[{
+               RowBox[{
+                RowBox[{"Length", "[", "err", "]"}], ">", "0"}], ",", "err", 
+               ",", 
+               RowBox[{"{", 
+                RowBox[{"{", 
+                 RowBox[{"0", ",", "0"}], "}"}], "}"}]}], "]"}], ",", 
+             "\[IndentingNewLine]", 
+             RowBox[{"Frame", "\[Rule]", "True"}], ",", 
+             RowBox[{"PlotRange", "\[Rule]", 
+              RowBox[{"{", 
+               RowBox[{"All", ",", 
+                RowBox[{"{", 
+                 RowBox[{
+                  RowBox[{"-", "27"}], ",", "12"}], "}"}]}], "}"}]}], ",", 
+             RowBox[{"Axes", "\[Rule]", "None"}], ",", 
+             RowBox[{"ImageSize", "\[Rule]", "400"}]}], "]"}]}], ",", 
+          "\[IndentingNewLine]", 
+          RowBox[{"Grid", "[", 
+           RowBox[{"List", "/@", 
+            RowBox[{"{", "\[IndentingNewLine]", 
+             RowBox[{"\"\<Optimising order:\>\"", ",", " ", 
+              RowBox[{"{", 
+               RowBox[{"maxOrder", ",", "trimOrder"}], "}"}], ",", 
+              "\[IndentingNewLine]", "\"\<Model dimension:\>\"", ",", " ", 
+              "dimensions", ",", "\[IndentingNewLine]", 
+              "\"\<Nelder-Mead iteration:\>\"", ",", " ", "step", ",", 
+              "\[IndentingNewLine]", "\"\<Objective evaluations:\>\"", ",", 
+              " ", "eval", ",", "\[IndentingNewLine]", "\"\<Best score:\>\"", 
+              ",", 
+              RowBox[{"If", "[", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"Length", "[", "err", "]"}], ">", "0"}], ",", 
+                RowBox[{"Last", "[", "err", "]"}], ",", "\[Infinity]"}], 
+               "]"}]}], "}"}]}], "]"}]}], "\[IndentingNewLine]", "}"}], 
+        RowBox[{"(*", 
+         RowBox[{",", 
+          RowBox[{"{", 
+           RowBox[{"If", "[", 
+            RowBox[{"showPrediction", ",", 
+             RowBox[{"Show", "[", 
+              RowBox[{
+               RowBox[{"predictionPlot", "[", 
+                RowBox[{"vars", ",", "sol", ",", 
+                 RowBox[{"solveEL", "[", 
+                  RowBox[{
+                  "vars", ",", "bestModel", ",", "init", ",", "0", ",", 
+                   "30"}], "]"}], ",", "tTrain", ",", "tMax", ",", "tStep"}], 
+                "]"}], ",", 
+               RowBox[{"ImageSize", "\[Rule]", "400"}]}], "]"}], ",", 
+             "\"\<Prediction hidden\>\""}], "]"}], "}"}]}], "*)"}], 
+        "\[IndentingNewLine]", "}"}], "]"}], "]"}], "]"}]}], ")"}]}]], "Input",\
+
+ CellChangeTimes->CompressedData["
+1:eJwdyksoA3AAx/ElxCTZYZQpkosmaeTCWC3JO5Y1bbZWaAdNkcw2c9DGATWP
+JOQg8thS07wplLQRUyO2spKxh8ZBovD//Q+/Pv3qm6lUN7RGMRgMDhkMN+nc
+WnZQsD17Qb3KrvFCbqKPeny06YeiElYQ9riaf2HIqaMOZial6YjTxjkqs7uD
+CyXhkVzI6ZOYoDh/b5h2jy0rJqK1UEM9Ve4ytSlBgWf9jjpaPTOrJ2bxO22w
+Qlq4A3dSrQ6oqMtwQ3vyFrXtROiFC2dyH1Rzec+w6CYqACtlS2+wQFP1Da8P
+ez0GYmDcEoIRpeMdzsflfMJ+hewP+iOq6AHiy4GBCX8mYhJgrErOgovxkjzI
+E34Uw3J9Oh8q1kVCaHx9aoS25XMx7Gv4ksKlodIpI7Fso4vKWRWNLRJdWoYZ
+XjJToteI9/qHXGjfD9ZaiOxJYT10drZ/3uKzzV/wHwwh17c=
+  "]],
+
+Cell["\<\
+It might be useful to show here the order in which orders are searched, so \
+you can judge how far along the process is.\
+\>", "Text",
+ CellChangeTimes->{{3.636300013914013*^9, 3.636300047364773*^9}}],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["searchOrders"], "Input",
+ CellChangeTimes->{{3.636300005613957*^9, 3.63630000782355*^9}}],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{
+   RowBox[{"1", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "8"}], "}"}]}], "}"}]}], ",", 
+   RowBox[{"2", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "5"}], "}"}]}], "}"}]}], ",", 
+   RowBox[{"3", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}]}], "}"}]}]}], "}"}]], "Output",
+ CellChangeTimes->{3.6363171073611383`*^9, 3.6363610141438313`*^9, 
+  3.640442962899671*^9, 3.640443543916089*^9, 3.640443825041607*^9}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"makeNMProgressPanel", "[", "]"}]], "Input",
+ CellChangeTimes->{{3.6362014817313013`*^9, 3.636201483232936*^9}, 
+   3.636274313464321*^9}],
+
+Cell[BoxData[
+ DynamicBox[ToBoxes[
+   Panel[
+    Grid[{{
+       Quiet[
+        ListPlot[
+         If[Length[$CellContext`err] > 0, $CellContext`err, {{0, 0}}], Frame -> 
+         True, PlotRange -> {All, {-27, 12}}, Axes -> None, ImageSize -> 
+         400]], 
+       Grid[
+        Map[
+        List, {"Optimising order:", {$CellContext`maxOrder, \
+$CellContext`trimOrder}, "Model dimension:", $CellContext`dimensions, 
+          "Nelder-Mead iteration:", $CellContext`step, 
+          "Objective evaluations:", $CellContext`eval, "Best score:", 
+          If[Length[$CellContext`err] > 0, 
+           Last[$CellContext`err], Infinity]}]]}}]], StandardForm],
+  ImageSizeCache->{535., {132., 138.}}]], "Output",
+ CellChangeTimes->{
+  3.636201489128912*^9, 3.636201550712893*^9, 3.636201871492084*^9, 
+   3.636201921583807*^9, 3.636202016938978*^9, 3.63620278955641*^9, 
+   3.636203011214229*^9, 3.6362113465839653`*^9, 3.636211387301216*^9, 
+   3.636212033535214*^9, 3.6362124462911243`*^9, {3.6362133915646057`*^9, 
+   3.636213404945581*^9}, 3.636216650089943*^9, 3.6362168125797586`*^9, 
+   3.636218478775587*^9, 3.636274192071698*^9, 3.636274404741911*^9, 
+   3.6362748834466543`*^9, 3.6362758966500893`*^9, 3.636286000553813*^9, 
+   3.6362871856787987`*^9, {3.636287596777033*^9, 3.636287645717914*^9}, {
+   3.636287683652562*^9, 3.63628769459301*^9}, {3.636287761182097*^9, 
+   3.63628778987148*^9}, {3.636287820493877*^9, 3.6362878307029047`*^9}, 
+   3.636287860891913*^9, 3.63628790116192*^9, 3.636292227575248*^9, 
+   3.636308975020939*^9, {3.6363796485071363`*^9, 3.636379652131422*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"Dynamic", "[", "bestModel", "]"}]], "Input",
+ CellChangeTimes->{{3.636384300870619*^9, 3.6363843104516287`*^9}}],
+
+Cell[BoxData[
+ DynamicBox[ToBoxes[$CellContext`bestModel, StandardForm],
+  ImageSizeCache->{708.30126953125, {307.19921875, 12.}}]], "Output",
+ CellChangeTimes->{3.636387254838119*^9}]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"0.000088153", " ", "\[Theta]1"}], "-", 
+  RowBox[{"0.0537429", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}]}], "-", 
+  RowBox[{"0.000091058", " ", 
+   RowBox[{"\[Theta]1", "^", "3"}]}], "+", 
+  RowBox[{"0.00285028", " ", 
+   RowBox[{"\[Theta]1", "^", "4"}]}], "+", 
+  RowBox[{"0.327984", " ", "\[Theta]1dot"}], "+", 
+  RowBox[{"0.0027107", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}]}], "+", 
+  RowBox[{"9.40763", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "6"}]}], " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}]}], "+", 
+  RowBox[{"0.000227012", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}]}], "+", 
+  RowBox[{"1.63075", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "3"}]}], "+", 
+  RowBox[{"1.17086", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]1dot", "^", "3"}]}], "+", 
+  RowBox[{"3.57152", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "6"}]}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "4"}]}], "+", 
+  RowBox[{"0.0000760099", " ", "\[Theta]2"}], "+", 
+  RowBox[{"0.00128569", " ", "\[Theta]1", " ", "\[Theta]2"}], "-", 
+  RowBox[{"0.000348742", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", "\[Theta]2"}], "-", 
+  RowBox[{"0.00227381", " ", 
+   RowBox[{"\[Theta]1", "^", "3"}], " ", "\[Theta]2"}], "-", 
+  RowBox[{"0.639105", " ", "\[Theta]1dot", " ", "\[Theta]2"}], "+", 
+  RowBox[{
+  "0.999988", " ", "\[Theta]1", " ", "\[Theta]1dot", " ", "\[Theta]2"}], "-", 
+  
+  RowBox[{"0.812857", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", "\[Theta]1dot", " ", "\[Theta]2"}], 
+  "+", 
+  RowBox[{"0.000012013", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", "\[Theta]2"}], "+", 
+  RowBox[{"0.000469974", " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", "\[Theta]2"}], "+", 
+  RowBox[{"2.17626", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "3"}], " ", "\[Theta]2"}], "-", 
+  RowBox[{"0.0421838", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "-", 
+  RowBox[{"0.00032252", " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "-", 
+  RowBox[{"0.014198", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "+", 
+  RowBox[{"0.450192", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "-", 
+  RowBox[{"0.554227", " ", "\[Theta]1", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "+", 
+  RowBox[{"0.00035328", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", 
+   RowBox[{"\[Theta]2", "^", "2"}]}], "-", 
+  RowBox[{"0.000100489", " ", 
+   RowBox[{"\[Theta]2", "^", "3"}]}], "-", 
+  RowBox[{"0.00427578", " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]2", "^", "3"}]}], "+", 
+  RowBox[{"0.293721", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2", "^", "3"}]}], "+", 
+  RowBox[{"0.000972405", " ", 
+   RowBox[{"\[Theta]2", "^", "4"}]}], "-", 
+  RowBox[{"0.145876", " ", "\[Theta]2dot"}], "-", 
+  RowBox[{"0.639109", " ", "\[Theta]1", " ", "\[Theta]2dot"}], "+", 
+  RowBox[{"0.499983", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", "\[Theta]2dot"}], "-", 
+  RowBox[{"0.270946", " ", 
+   RowBox[{"\[Theta]1", "^", "3"}], " ", "\[Theta]2dot"}], "+", 
+  RowBox[{"0.00427232", " ", "\[Theta]1dot", " ", "\[Theta]2dot"}], "+", 
+  RowBox[{
+  "0.0000215014", " ", "\[Theta]1", " ", "\[Theta]1dot", " ", 
+   "\[Theta]2dot"}], "-", 
+  RowBox[{"0.00165916", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", "\[Theta]1dot", " ", 
+   "\[Theta]2dot"}], "+", 
+  RowBox[{"2.55542", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", "\[Theta]2dot"}], "+", 
+  RowBox[{"4.25337", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", "\[Theta]2dot"}], "+", 
+  RowBox[{"0.0000155687", " ", 
+   RowBox[{"\[Theta]1dot", "^", "3"}], " ", "\[Theta]2dot"}], "+", 
+  RowBox[{
+  "0.900407", " ", "\[Theta]1", " ", "\[Theta]2", " ", "\[Theta]2dot"}], "-", 
+  
+  RowBox[{"0.554234", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", "\[Theta]2", " ", "\[Theta]2dot"}], 
+  "+", 
+  RowBox[{
+  "0.0000267655", " ", "\[Theta]1dot", " ", "\[Theta]2", " ", 
+   "\[Theta]2dot"}], "+", 
+  RowBox[{
+  "0.00550936", " ", "\[Theta]1", " ", "\[Theta]1dot", " ", "\[Theta]2", " ", 
+   "\[Theta]2dot"}], "+", 
+  RowBox[{"5.57251", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", "\[Theta]2", " ", 
+   "\[Theta]2dot"}], "+", 
+  RowBox[{"0.881171", " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}], " ", "\[Theta]2dot"}], "-", 
+  RowBox[{"0.00143093", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}], " ", "\[Theta]2dot"}], "+", 
+  RowBox[{"0.00342705", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.000010981", " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.00036705", " ", 
+   RowBox[{"\[Theta]1", "^", "2"}], " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"3.22063", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"3.09996", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "7"}]}], " ", "\[Theta]1", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.0000271541", " ", 
+   RowBox[{"\[Theta]1dot", "^", "2"}], " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.0000147208", " ", "\[Theta]2", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.000587819", " ", "\[Theta]1", " ", "\[Theta]2", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"1.56955", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "8"}]}], " ", "\[Theta]1dot", " ", "\[Theta]2", " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "+", 
+  RowBox[{"0.000536523", " ", 
+   RowBox[{"\[Theta]2", "^", "2"}], " ", 
+   RowBox[{"\[Theta]2dot", "^", "2"}]}], "-", 
+  RowBox[{"2.58526", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "8"}]}], " ", 
+   RowBox[{"\[Theta]2dot", "^", "3"}]}], "+", 
+  RowBox[{"5.72684", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "9"}]}], " ", "\[Theta]1", " ", 
+   RowBox[{"\[Theta]2dot", "^", "3"}]}], "+", 
+  RowBox[{"0.0000233549", " ", "\[Theta]1dot", " ", 
+   RowBox[{"\[Theta]2dot", "^", "3"}]}], "-", 
+  RowBox[{"3.20018", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "8"}]}], " ", "\[Theta]2", " ", 
+   RowBox[{"\[Theta]2dot", "^", "3"}]}], "+", 
+  RowBox[{"8.6481", "*", 
+   RowBox[{"10", "^", 
+    RowBox[{"-", "6"}]}], " ", 
+   RowBox[{"\[Theta]2dot", "^", "4"}]}]}]], "Input",
+ CellChangeTimes->{{3.640520576773426*^9, 3.640520576774972*^9}}]
+}, Open  ]]
+},
+WindowSize->{862, 689},
+WindowMargins->{{Automatic, 141}, {Automatic, 0}},
+FrontEndVersion->"10.1 for Mac OS X x86 (32-bit, 64-bit Kernel) (March 23, \
+2015)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 99, 1, 92, "Title"],
+Cell[682, 25, 948, 17, 182, "Text"],
+Cell[1633, 44, 3804, 86, 284, "Input"],
+Cell[5440, 132, 210, 4, 30, "Text"],
+Cell[CellGroupData[{
+Cell[5675, 140, 103, 1, 28, "Input"],
+Cell[5781, 143, 2548, 79, 80, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[8366, 227, 161, 3, 28, "Input"],
+Cell[8530, 232, 1595, 30, 287, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[10162, 267, 136, 2, 28, "Input"],
+Cell[10301, 271, 184, 3, 337, "Output"]
+}, Open  ]],
+Cell[10500, 277, 6769, 165, 335, "Input"]
+}, Open  ]]
+}
+]
+*)
+
+(* End of internal cache information *)

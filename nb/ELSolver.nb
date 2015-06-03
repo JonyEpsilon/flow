@@ -1,0 +1,1515 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 10.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[     60288,       1506]
+NotebookOptionsPosition[     57749,       1427]
+NotebookOutlinePosition[     58106,       1443]
+CellTagsIndexPosition[     58063,       1440]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Euler-Lagrange solver", "Title",
+ CellChangeTimes->{{3.6357021613099813`*^9, 3.635702165426605*^9}}],
+
+Cell["\<\
+This notebook contains the code for the polynomial Lagrangian search \
+algorithm.\
+\>", "Text",
+ CellChangeTimes->{{3.636205913611555*^9, 3.6362059756437607`*^9}}],
+
+Cell[CellGroupData[{
+
+Cell["Preparing the score function", "Subsection",
+ CellChangeTimes->{{3.636205966137278*^9, 3.636205971582734*^9}}],
+
+Cell[TextData[{
+ "The following functions prepare the score function for a given model and \
+dataset. A nice feature of the polynomial model is that all of the \
+derivatives of the model can be evaluated in advance, so the score can be \
+pre-computed, resulting in a score function that only depends on the model \
+parameters, independent of the number of data points. These functions do that \
+pre-computation, and result in something that can be fed to the numerical \
+optimiser.\n\nIf you\[CloseCurlyQuote]re not familiar with ",
+ StyleBox["Mathematica",
+  FontSlant->"Italic"],
+ " meta-programming, then this section might be quite hard to follow.\n\n\
+First, a couple of helper functions for symbol mangling."
+}], "Text",
+ CellChangeTimes->{{3.6362059790524*^9, 3.636206123393255*^9}}],
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"symbolAppend", "[", 
+   RowBox[{"symbol_", ",", "postfix_"}], "]"}], ":=", 
+  RowBox[{"Symbol", "[", 
+   RowBox[{
+    RowBox[{"SymbolName", "[", "symbol", "]"}], "<>", "postfix"}], 
+   "]"}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"dotVar", "[", "v_", "]"}], ":=", 
+  RowBox[{"symbolAppend", "[", 
+   RowBox[{"v", ",", "\"\<dot\>\""}], "]"}]}]}], "Input",
+ CellChangeTimes->{{3.636186943129759*^9, 3.636186952742033*^9}, {
+  3.636187500524008*^9, 3.636187541163336*^9}}],
+
+Cell[TextData[{
+ "The Euler-Lagrange equation is a little tricky, in that it treats velocity \
+variables as independent of position variable when differentiating the \
+Lagrangian, but then treats velocities as the derivative of the positions \
+when doing the time derivative. We handle this in a simple way by explicitly \
+transforming the symbols in the equations: one transformation makes \
+time-independent symbols time-dependent, and the second relates velocities \
+and coordinates.\n\nHere, and in all functions below, ",
+ Cell[BoxData[
+  FormBox["vars", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ " is a list of the position variables, corresponding to the variables in the \
+dataset (see below)."
+}], "Text",
+ CellChangeTimes->{{3.636206131560281*^9, 3.636206336787539*^9}, {
+  3.6362065789596024`*^9, 3.636206592077092*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"generateTransformations", "[", "vars_", "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"dotVars", ",", "toTimeDependent", ",", "toDerivatives"}], "}"}],
+     ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"dotVars", "=", 
+      RowBox[{"dotVar", "/@", "vars"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"toTimeDependent", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"#", "\[Rule]", 
+         RowBox[{"#", "[", "t", "]"}]}], "&"}], "/@", 
+       RowBox[{"Join", "[", 
+        RowBox[{"vars", ",", "dotVars"}], "]"}]}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"toDerivatives", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{
+         RowBox[{
+          RowBox[{"dotVar", "[", "#", "]"}], "[", "t", "]"}], "\[Rule]", 
+         RowBox[{
+          RowBox[{"#", "'"}], "[", "t", "]"}]}], "&"}], "/@", "vars"}]}], ";",
+      "\[IndentingNewLine]", 
+     RowBox[{"{", 
+      RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}]}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.636186187750161*^9, 3.636186195842209*^9}, {
+  3.636186266864026*^9, 3.636186325267001*^9}, {3.6361866893189487`*^9, 
+  3.6361869022936172`*^9}, {3.636186936935605*^9, 3.6361869400631037`*^9}, {
+  3.636201806476975*^9, 3.636201813586475*^9}, {3.6362065849158287`*^9, 
+  3.636206585815181*^9}}],
+
+Cell["\<\
+This generates the EL part of the score, which is zero if the Euler-Lagrange \
+equation is satifsfied. It returns a function of the Lagrangian, which itself \
+returns the value for the score symbolically.\
+\>", "Text",
+ CellChangeTimes->{{3.636206291088027*^9, 3.636206294295072*^9}, {
+  3.636206340555401*^9, 3.636206394377193*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"generateELScore", "[", "vars_", "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}], "=", 
+      RowBox[{"generateTransformations", "[", "vars", "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"Function", "[", 
+      RowBox[{"l", ",", "\[IndentingNewLine]", 
+       RowBox[{"Plus", "@@", 
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{
+           SuperscriptBox[
+            RowBox[{"(", 
+             RowBox[{
+              RowBox[{
+               RowBox[{"D", "[", 
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"D", "[", 
+                   RowBox[{
+                    RowBox[{"l", "/.", "toTimeDependent"}], ",", 
+                    RowBox[{
+                    RowBox[{"dotVar", "[", "#", "]"}], "[", "t", "]"}]}], 
+                   "]"}], "/.", "toDerivatives"}], ",", "t"}], "]"}], "-", 
+               RowBox[{"D", "[", 
+                RowBox[{
+                 RowBox[{"l", "/.", "toTimeDependent"}], ",", 
+                 RowBox[{"#", "[", "t", "]"}]}], "]"}]}], "/.", 
+              "toDerivatives"}], ")"}], "2"], "&"}], "/@", "vars"}], 
+         ")"}]}]}], "\[IndentingNewLine]", "]"}]}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.636185553449294*^9, 3.63618562078446*^9}, {
+  3.6361858354710207`*^9, 3.636185836064197*^9}, {3.6361862033562727`*^9, 
+  3.636186255421191*^9}, {3.636186306923086*^9, 3.6361863473478603`*^9}, {
+  3.636186994888825*^9, 3.636187059785425*^9}, {3.636201816493685*^9, 
+  3.6362018186610203`*^9}}],
+
+Cell["\<\
+Same as above, but for the normalisation part of the score, which avoids \
+mathematically trivial expressions.\
+\>", "Text",
+ CellChangeTimes->{{3.63620639694167*^9, 3.636206436499436*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"generateNScore", "[", "vars_", "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}], "=", 
+      RowBox[{"generateTransformations", "[", "vars", "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"Function", "[", 
+      RowBox[{"l", ",", "\[IndentingNewLine]", 
+       RowBox[{"Plus", "@@", 
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{
+           RowBox[{
+            SuperscriptBox[
+             RowBox[{"(", 
+              RowBox[{"D", "[", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"D", "[", 
+                  RowBox[{
+                   RowBox[{"l", "/.", "toTimeDependent"}], ",", 
+                   RowBox[{
+                    RowBox[{"dotVar", "[", "#", "]"}], "[", "t", "]"}]}], 
+                  "]"}], "/.", "toDerivatives"}], ",", "t"}], "]"}], ")"}], 
+             "2"], "+", 
+            SuperscriptBox[
+             RowBox[{"(", 
+              RowBox[{
+               RowBox[{"D", "[", 
+                RowBox[{
+                 RowBox[{"l", "/.", "toTimeDependent"}], ",", 
+                 RowBox[{"#", "[", "t", "]"}]}], "]"}], "/.", 
+               "toDerivatives"}], ")"}], "2"]}], "&"}], "/@", "vars"}], 
+         ")"}]}]}], "\[IndentingNewLine]", "]"}]}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.6354091568317833`*^9, 3.635409170853413*^9}, {
+   3.635437036999565*^9, 3.635437055009767*^9}, {3.636186364061249*^9, 
+   3.636186382461516*^9}, {3.636186498106615*^9, 3.636186516001268*^9}, 
+   3.6361865484808073`*^9, {3.63618717331775*^9, 3.636187215121746*^9}, {
+   3.636201821835723*^9, 3.6362018258425426`*^9}}],
+
+Cell["\<\
+This function transforms a score function into one that tries to drive its \
+argument to one.\
+\>", "Text",
+ CellChangeTimes->{{3.636206442753977*^9, 3.636206469528269*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"targetUnity", "[", "x_", "]"}], ":=", 
+  RowBox[{
+   SuperscriptBox[
+    RowBox[{"Log", "[", 
+     RowBox[{
+      SuperscriptBox["10", 
+       RowBox[{"-", "25"}]], "+", "x"}], "]"}], "2"], "+", "1"}]}]], "Input",
+ CellChangeTimes->{{3.635411183699441*^9, 3.635411217955223*^9}}],
+
+Cell[TextData[{
+ "To eliminate tautological solutions of the EL equation we also score the \
+candidate Lagrangian against a control data set. The exact form of this \
+control data doesn\[CloseCurlyQuote]t seem to be important, and here we \
+simply use something that moves in a straight line with equal values for all \
+coordinates.\n\nHere, and below, ",
+ Cell[BoxData[
+  FormBox["tTrain", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "is the maximum time for which training data is provided, and ",
+ Cell[BoxData[
+  FormBox["tStep", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ " is the interval between successive training data points. The training data \
+is assumed to start at ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"t", "=", "0"}], TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "."
+}], "Text",
+ CellChangeTimes->{{3.6362064727231483`*^9, 3.6362066343213577`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"makeControlTrajectory", "[", 
+   RowBox[{"vars_", ",", "tTrain_", ",", "tStep_"}], "]"}], ":=", 
+  RowBox[{"Flatten", "[", 
+   RowBox[{
+    RowBox[{
+     RowBox[{"{", "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"#", "\[Rule]", 
+        RowBox[{"Table", "[", 
+         RowBox[{
+          RowBox[{"0.1", " ", "t"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "tTrain", ",", "tStep"}], "}"}]}], 
+         "]"}]}], ",", "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"symbolAppend", "[", 
+         RowBox[{"#", ",", "\"\<d\>\""}], "]"}], "\[Rule]", 
+        RowBox[{"Table", "[", 
+         RowBox[{"0.1", " ", ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "tTrain", ",", "tStep"}], "}"}]}], 
+         "]"}]}], ",", "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"symbolAppend", "[", 
+         RowBox[{"#", ",", "\"\<dd\>\""}], "]"}], "\[Rule]", 
+        RowBox[{"Table", "[", 
+         RowBox[{"0", ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "0", ",", "tTrain", ",", "tStep"}], "}"}]}], 
+         "]"}]}]}], "}"}], "&"}], "/@", "vars"}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.636187417289411*^9, 3.6361874913593187`*^9}, {
+  3.6361875484024153`*^9, 3.636187611263442*^9}}],
+
+Cell[TextData[{
+ "The score involves suming over the trajectories (both real and control). \
+This function performs the sum, and mangles the variables in the the score \
+function parts such that the symbols match the form that appear in the data. \
+Specifically, data for the value, first and second derivatives for each \
+degree of freedom should be provided, all in one list as ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"x1", "\[Rule]", 
+      RowBox[{"{", "...", "}"}]}], ",", " ", 
+     RowBox[{"x1d", "\[Rule]", 
+      RowBox[{"{", "...", "}"}]}], ",", 
+     RowBox[{"x1dd", "\[Rule]", 
+      RowBox[{"{", "...", "}"}]}], ",", " ", "..."}], "}"}], 
+   TraditionalForm]]],
+ ". The ",
+ Cell[BoxData[
+  FormBox["x1", TraditionalForm]]],
+ " part of the variable names should match the variables fed to the score \
+function.\n\nNote that this sum over the data points will be evaluated \
+symbolically before the optimisation loop is entered. The time per \
+optimisation loop only depends on the number of parameters in the model, not \
+on the number of data points."
+}], "Text",
+ CellChangeTimes->{{3.636206674171122*^9, 3.6362069200096903`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"pathSum", "[", 
+   RowBox[{"vars_", ",", "score_", ",", "p_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", "toData", "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"toData", "=", 
+      RowBox[{"Flatten", "[", 
+       RowBox[{
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{
+            RowBox[{"#", "[", "t", "]"}], "\[Rule]", "#"}], ",", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"#", "'"}], "[", "t", "]"}], "\[Rule]", 
+            RowBox[{"symbolAppend", "[", 
+             RowBox[{"#", ",", "\"\<d\>\""}], "]"}]}], ",", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"#", "''"}], "[", "t", "]"}], "\[Rule]", 
+            RowBox[{"symbolAppend", "[", 
+             RowBox[{"#", ",", "\"\<dd\>\""}], "]"}]}]}], "}"}], "&"}], "/@", 
+        "vars"}], "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"Plus", "@@", 
+      RowBox[{"(", 
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{"score", "/.", "toData"}], ")"}], "/.", "p"}], ")"}]}]}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.635441770011778*^9, 3.635441846600874*^9}, {
+  3.635441886367857*^9, 3.635441946273408*^9}, {3.635442090662353*^9, 
+  3.635442095836142*^9}, {3.6354421695591297`*^9, 3.635442174604323*^9}, {
+  3.6354422059147577`*^9, 3.635442220279869*^9}, {3.635442251229815*^9, 
+  3.635442273890667*^9}, {3.6361878733780613`*^9, 3.636187874665819*^9}, {
+  3.6361883596085443`*^9, 3.636188393114748*^9}, {3.6362018335232983`*^9, 
+  3.6362018364510202`*^9}}],
+
+Cell[TextData[{
+ "This puts all of the above together to make the score function for the \
+given ",
+ Cell[BoxData[
+  FormBox["vars", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ ", model ",
+ Cell[BoxData[
+  FormBox["l", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ ", real and control trajectories. It will return a symbolic expression that \
+only depends on the model parameters. The trajectories are given in the \
+format described above for ",
+ Cell[BoxData[
+  FormBox["pathSum", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "."
+}], "Text",
+ CellChangeTimes->{{3.636206923474098*^9, 3.636206988287219*^9}, {
+  3.636207229436751*^9, 3.636207242676394*^9}, {3.6362755701120863`*^9, 
+  3.6362755711959047`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"generateScore", "[", 
+   RowBox[{"vars_", ",", "l_", ",", "trajectory_", ",", "controlTrj_"}], 
+   "]"}], ":=", 
+  RowBox[{"Log", "[", 
+   RowBox[{
+    FractionBox[
+     RowBox[{
+      SuperscriptBox["10", 
+       RowBox[{"-", "10"}]], "+", 
+      RowBox[{"Expand", "[", 
+       RowBox[{"pathSum", "[", 
+        RowBox[{"vars", ",", 
+         RowBox[{
+          RowBox[{"generateELScore", "[", "vars", "]"}], "[", "l", "]"}], ",",
+          "trajectory"}], "]"}], "]"}]}], 
+     RowBox[{
+      SuperscriptBox["10", 
+       RowBox[{"-", "10"}]], "+", 
+      RowBox[{"Expand", "[", 
+       RowBox[{"pathSum", "[", 
+        RowBox[{"vars", ",", 
+         RowBox[{
+          RowBox[{"generateELScore", "[", "vars", "]"}], "[", "l", "]"}], ",",
+          "controlTrj"}], "]"}], "]"}]}]], 
+    RowBox[{"targetUnity", "[", 
+     RowBox[{"Expand", "[", 
+      RowBox[{"pathSum", "[", 
+       RowBox[{"vars", ",", 
+        RowBox[{
+         RowBox[{"generateNScore", "[", "vars", "]"}], "[", "l", "]"}], ",", 
+        "controlTrj"}], "]"}], "]"}], "]"}], 
+    RowBox[{"targetUnity", "[", 
+     RowBox[{"Expand", "[", 
+      RowBox[{"pathSum", "[", 
+       RowBox[{"vars", ",", 
+        RowBox[{
+         RowBox[{"generateELScore", "[", "vars", "]"}], "[", "l", "]"}], ",", 
+        "controlTrj"}], "]"}], "]"}], "]"}]}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.635411224561001*^9, 3.635411230965073*^9}, {
+   3.635411283802718*^9, 3.635411361873599*^9}, {3.635411492496633*^9, 
+   3.6354114992450323`*^9}, {3.635423243222476*^9, 3.6354233351743517`*^9}, {
+   3.635424254384679*^9, 3.635424258750061*^9}, {3.635441951375547*^9, 
+   3.635441998287685*^9}, {3.6356075078099413`*^9, 3.635607522028748*^9}, {
+   3.635607624606776*^9, 3.6356076405688553`*^9}, {3.635613152238245*^9, 
+   3.635613161471854*^9}, {3.6356885180089197`*^9, 3.6356885244665813`*^9}, {
+   3.635688645692725*^9, 3.63568866220323*^9}, {3.63568874940317*^9, 
+   3.635688753591626*^9}, 3.635688828957782*^9, {3.635689439805643*^9, 
+   3.635689451530635*^9}, {3.6356895404316587`*^9, 3.635689548991941*^9}, {
+   3.635689595768441*^9, 3.635689609883972*^9}, {3.635689865923542*^9, 
+   3.63568986871094*^9}, {3.6356908054153967`*^9, 3.6356908068391733`*^9}, {
+   3.635692608844226*^9, 3.635692618300417*^9}, {3.635692712404621*^9, 
+   3.635692726166259*^9}, {3.63569285989782*^9, 3.63569287115147*^9}, {
+   3.6361880153313932`*^9, 3.6361880603728523`*^9}, {3.636188416698594*^9, 
+   3.636188472001495*^9}, {3.6361885836253147`*^9, 3.636188587336322*^9}, {
+   3.636193689578136*^9, 3.63619371132309*^9}, {3.636193891525043*^9, 
+   3.636193910749606*^9}, {3.6361943138076563`*^9, 3.636194320354909*^9}, {
+   3.63620297211134*^9, 3.636203005130279*^9}, {3.6362030486714993`*^9, 
+   3.636203051315592*^9}, 3.6362069532669888`*^9, {3.6399215189619102`*^9, 
+   3.639921523609241*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Parameter optimisation", "Subsection",
+ CellChangeTimes->{{3.6362070258187227`*^9, 3.636207030340889*^9}}],
+
+Cell["\<\
+The optimisation is done with a straighforward Nelder-Mead iterative method. \
+The following variables are used in the solver loop to report progress to the \
+user.\
+\>", "Text",
+ CellChangeTimes->{{3.636207147703821*^9, 3.636207177988326*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"err", "=", 
+   RowBox[{"{", "}"}]}], ";", 
+  RowBox[{"step", "=", "0"}], ";", 
+  RowBox[{"eval", "=", "0"}], ";", 
+  RowBox[{"dimensions", "=", "0"}], ";", 
+  RowBox[{"bestModel", "=", "0"}], ";"}]], "Input",
+ CellChangeTimes->{{3.6362007231177998`*^9, 3.636200732102157*^9}, {
+   3.6362164597320967`*^9, 3.636216471644815*^9}, 3.636274294610146*^9, {
+   3.6363795592876987`*^9, 3.63637956337304*^9}}],
+
+Cell[TextData[{
+ "The function to call the solver itself. A rather strict convergence \
+tolerance is used to encourage the solver not to give up too soon. ",
+ StyleBox["Mathematica",
+  FontSlant->"Italic"],
+ "\[CloseCurlyQuote]s default behviour of locally optimising the solution \
+after the Nelder-Mead search is disabled, as it can use a machine-crashing \
+amount of memory for high dimensional searches. A limit is placed on the \
+maximum iterations to make sure the search is always bounded in time. It is \
+of course possible that the solver could converge if given more generations \
+than the limit, but it makes development painful, and usually when it is \
+going to converge, it does so quite quickly. The Nelder-Mead parameters are \
+optimised for high dimensions, following the advice of Fuchang Gao and Lixing \
+Han in Comput. Optim. Appl. 51 (1), 259-277 (2012). Step and evaluation \
+monitors are used to update the parameters that are monitored, above, during \
+the run. The coefficients are constrained to lie within ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"-", "1.0"}], ",", "1.0"}], "}"}], TraditionalForm]]],
+ ". On the one hand, this doesn\[CloseCurlyQuote]t matter, because it\
+\[CloseCurlyQuote]s only the ratio of the coefficients that matters, but on \
+the other hand, the ",
+ Cell[BoxData[
+  FormBox["targetUnity", TraditionalForm]]],
+ " condition in the score function does prefer one overall scaling of the \
+Lagrangian over all others. In practice, and perhaps because the data I use \
+always lies in \[PlusMinus] few of zero, it doesn\[CloseCurlyQuote]t seem to \
+be a problem."
+}], "Text",
+ CellChangeTimes->{{3.636207218387472*^9, 3.636207294394047*^9}, {
+  3.6362073938932533`*^9, 3.636207541179332*^9}, {3.636207673270262*^9, 
+  3.636207752549025*^9}, {3.636273971751079*^9, 3.636273971992457*^9}, {
+  3.636292102257019*^9, 3.636292147229073*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"nmSolve", "[", 
+   RowBox[{"scoreExpression_", ",", "coeffs_", ",", "model_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", "sol", "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"err", "=", 
+      RowBox[{"{", "}"}]}], ";", 
+     RowBox[{"step", "=", "0"}], ";", 
+     RowBox[{"eval", "=", "0"}], ";", 
+     RowBox[{"dimensions", "=", 
+      RowBox[{"Length", "[", "coeffs", "]"}]}], ";", 
+     RowBox[{"bestModel", "=", "0"}], ";", "\[IndentingNewLine]", 
+     RowBox[{"sol", "=", 
+      RowBox[{"NMinimize", "[", 
+       RowBox[{
+        RowBox[{"Join", "[", 
+         RowBox[{
+          RowBox[{"{", "scoreExpression", "}"}], ",", 
+          RowBox[{"Thread", "[", 
+           RowBox[{
+            RowBox[{
+             RowBox[{
+              RowBox[{"-", "1.0"}], "<", "#", "<", "1.0"}], "&"}], "/@", 
+            "coeffs"}], "]"}]}], "]"}], ",", "\[IndentingNewLine]", "coeffs", 
+        ",", "\[IndentingNewLine]", 
+        RowBox[{"AccuracyGoal", "\[Rule]", "10"}], ",", "\[IndentingNewLine]", 
+        RowBox[{"PrecisionGoal", "\[Rule]", "10"}], ",", 
+        "\[IndentingNewLine]", 
+        RowBox[{"Method", "\[Rule]", 
+         RowBox[{"{", "\[IndentingNewLine]", 
+          RowBox[{"\"\<NelderMead\>\"", ",", "\[IndentingNewLine]", 
+           RowBox[{"\"\<PostProcess\>\"", "\[Rule]", "False"}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{"\"\<ExpandRatio\>\"", "\[Rule]", 
+            RowBox[{"1", "+", 
+             RowBox[{"(", 
+              RowBox[{"2", "/", 
+               RowBox[{"Length", "[", "coeffs", "]"}]}], ")"}]}]}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{"\"\<ContractRatio\>\"", "\[Rule]", 
+            RowBox[{
+             RowBox[{"(", 
+              RowBox[{"3", "/", "4"}], ")"}], "-", 
+             RowBox[{"(", 
+              RowBox[{"1", "/", 
+               RowBox[{"(", 
+                RowBox[{"2", " ", 
+                 RowBox[{"Length", "[", "coeffs", "]"}]}], ")"}]}], ")"}]}]}],
+            ",", "\[IndentingNewLine]", 
+           RowBox[{"\"\<ShrinkRatio\>\"", "\[Rule]", 
+            RowBox[{"1", "-", 
+             RowBox[{"(", 
+              RowBox[{"1", "/", 
+               RowBox[{"Length", "[", "coeffs", "]"}]}], ")"}]}]}]}], "}"}]}],
+         ",", "\[IndentingNewLine]", 
+        RowBox[{"MaxIterations", "\[Rule]", 
+         RowBox[{"50", " ", 
+          SuperscriptBox["10", "5"]}]}], ",", "\[IndentingNewLine]", 
+        RowBox[{"StepMonitor", "\[RuleDelayed]", 
+         RowBox[{"(", 
+          RowBox[{
+           RowBox[{"step", "++"}], ";", 
+           RowBox[{"If", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"Mod", "[", 
+               RowBox[{"step", ",", "500"}], "]"}], "\[Equal]", "0"}], ",", 
+             RowBox[{
+              RowBox[{"err", "=", 
+               RowBox[{"Append", "[", 
+                RowBox[{"err", ",", "scoreExpression"}], "]"}]}], ";", 
+              RowBox[{"bestModel", "=", "model"}]}]}], "]"}]}], ")"}]}], ",", 
+        "\[IndentingNewLine]", 
+        RowBox[{"EvaluationMonitor", ":>", 
+         RowBox[{"(", 
+          RowBox[{"eval", "++"}], ")"}]}]}], "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"\"\<steps\>\"", "\[Rule]", "step"}], ",", 
+       RowBox[{"\"\<bestScore\>\"", "\[Rule]", 
+        RowBox[{
+        "sol", "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]}], ",", 
+       
+       RowBox[{"\"\<solution\>\"", "\[Rule]", 
+        RowBox[{
+        "sol", "\[LeftDoubleBracket]", "2", "\[RightDoubleBracket]"}]}], ",", 
+       
+       RowBox[{
+        RowBox[{"\"\<model\>\"", "\[Rule]", "model"}], "/.", 
+        RowBox[{
+        "sol", "\[LeftDoubleBracket]", "2", "\[RightDoubleBracket]"}]}]}], 
+      "}"}]}]}], "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.635442492338064*^9, 3.635442497397464*^9}, {
+   3.635442768737195*^9, 3.6354427702555313`*^9}, {3.6354474096394663`*^9, 
+   3.635447412045888*^9}, 3.6354918865943613`*^9, 3.635498616230372*^9, {
+   3.635498861916629*^9, 3.6354988620378313`*^9}, {3.63549924544975*^9, 
+   3.635499266494153*^9}, 3.63558405510343*^9, {3.635584089919299*^9, 
+   3.635584103850786*^9}, {3.635584642594898*^9, 3.635584674691169*^9}, {
+   3.635584832780879*^9, 3.635584836050993*^9}, {3.635584970762801*^9, 
+   3.635584972912594*^9}, 3.6355850993383217`*^9, {3.635585284465919*^9, 
+   3.6355853270635242`*^9}, {3.635602603679105*^9, 3.6356026047213593`*^9}, 
+   3.635607424659478*^9, {3.635666558821122*^9, 3.635666574019174*^9}, {
+   3.6356666040597363`*^9, 3.6356666892657757`*^9}, {3.635666720109256*^9, 
+   3.635666743993061*^9}, {3.6356668302867317`*^9, 3.6356668411360273`*^9}, {
+   3.635666903721149*^9, 3.635666988998638*^9}, {3.635667257411407*^9, 
+   3.635667284061347*^9}, {3.6356673280239058`*^9, 3.635667364921085*^9}, 
+   3.6356680535558853`*^9, {3.635670205550991*^9, 3.635670205975607*^9}, {
+   3.63568518128018*^9, 3.63568521312959*^9}, {3.635686139319922*^9, 
+   3.635686147744566*^9}, {3.6356863345728273`*^9, 3.635686408231061*^9}, {
+   3.635686959161744*^9, 3.6356869600150642`*^9}, {3.635688981576439*^9, 
+   3.635688986234321*^9}, {3.635689043329877*^9, 3.635689046714171*^9}, {
+   3.635689115267022*^9, 3.635689128153076*^9}, {3.6356892583066483`*^9, 
+   3.635689300178491*^9}, {3.6356899264401817`*^9, 3.6356899395939627`*^9}, 
+   3.635689974073223*^9, {3.635690410326417*^9, 3.6356904304498377`*^9}, {
+   3.635690482508141*^9, 3.635690482885605*^9}, {3.63569054993857*^9, 
+   3.6356905504848337`*^9}, {3.6356907582012177`*^9, 3.635690760103113*^9}, {
+   3.6356910730689363`*^9, 3.635691100002966*^9}, {3.63569119272456*^9, 
+   3.635691222176271*^9}, {3.635691323893071*^9, 3.63569132794459*^9}, {
+   3.6356914285977163`*^9, 3.635691428804289*^9}, {3.635691474240871*^9, 
+   3.635691479540316*^9}, {3.635691678271892*^9, 3.635691679566492*^9}, {
+   3.635691806846346*^9, 3.635691809369796*^9}, {3.6356919218361673`*^9, 
+   3.635691950851403*^9}, {3.6356920663835382`*^9, 3.63569208267173*^9}, 
+   3.6356921578391647`*^9, {3.635692247498661*^9, 3.635692251369548*^9}, {
+   3.6356925136405993`*^9, 3.6356925260149527`*^9}, 3.635692601646426*^9, 
+   3.6356933243935633`*^9, {3.635693769624968*^9, 3.635693780931553*^9}, {
+   3.636188993358124*^9, 3.6361891225073*^9}, {3.636189386282805*^9, 
+   3.6361893880241528`*^9}, {3.636193131527042*^9, 3.636193151800633*^9}, {
+   3.636193242254208*^9, 3.636193245046163*^9}, {3.63620761375175*^9, 
+   3.636207653278982*^9}, {3.636211366351851*^9, 3.636211368733616*^9}, {
+   3.636212906109808*^9, 3.6362129089911633`*^9}, {3.6362167587550173`*^9, 
+   3.636216782413933*^9}, {3.636274339314631*^9, 3.6362743412776403`*^9}, {
+   3.6362920483660192`*^9, 3.636292055136338*^9}, {3.636292400692151*^9, 
+   3.63629244269211*^9}, {3.636292517779336*^9, 3.636292579137953*^9}, {
+   3.636292972537554*^9, 3.6362929731987886`*^9}, {3.6362934840374603`*^9, 
+   3.636293494205234*^9}, {3.636306805180627*^9, 3.6363068056821623`*^9}, {
+   3.636363088758073*^9, 3.636363096296466*^9}, {3.6363636638199177`*^9, 
+   3.636363666281242*^9}, {3.636379534137933*^9, 3.636379554975655*^9}, {
+   3.636629733649387*^9, 3.636629734607987*^9}, {3.636629890661539*^9, 
+   3.6366299166512747`*^9}, {3.6367915186432953`*^9, 3.636791521644169*^9}, {
+   3.636793499995625*^9, 3.636793503987722*^9}, {3.63679385065344*^9, 
+   3.636793851551547*^9}, {3.636794509171627*^9, 3.63679451011454*^9}, {
+   3.6367954639004583`*^9, 3.636795464798579*^9}, {3.636795509091502*^9, 
+   3.6367955103506947`*^9}, {3.640501706503154*^9, 3.640501707476418*^9}, {
+   3.6405018510141287`*^9, 3.6405018520449038`*^9}, 3.640513157584173*^9}],
+
+Cell["\<\
+Finally, this brings the score pre-computation and numerical solver together \
+to give a function that optimises a given model with respect to the given \
+coefficients. Data is given as a list of datasets. The score will be the sum \
+of the score for each individual dataset.\
+\>", "Text",
+ CellChangeTimes->{{3.636207546636499*^9, 3.636207578000882*^9}, 
+   3.636213107533845*^9, {3.6362741368063517`*^9, 3.63627413927761*^9}, {
+   3.6362743524274197`*^9, 3.636274368228346*^9}, {3.6404330831962442`*^9, 
+   3.64043310875482*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"optimiseLagrangian", "[", 
+   RowBox[{
+   "vars_", ",", "data_", ",", "model_", ",", "coeffs_", ",", "tTrain_", ",", 
+    "tStep_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"controlData", ",", "score"}], "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"controlData", "=", 
+      RowBox[{"makeControlTrajectory", "[", 
+       RowBox[{"vars", ",", "tTrain", ",", "tStep"}], "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"score", "=", 
+      RowBox[{"Plus", "@@", 
+       RowBox[{"(", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"generateScore", "[", 
+           RowBox[{"vars", ",", "model", ",", "#", ",", "controlData"}], 
+           "]"}], "&"}], "/@", "data"}], ")"}]}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"nmSolve", "[", 
+      RowBox[{"score", ",", "coeffs", ",", "model"}], "]"}]}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.640433055350627*^9, 3.640433066793233*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Model generation", "Subsection",
+ CellChangeTimes->{{3.6362742657081127`*^9, 3.636274267524707*^9}}],
+
+Cell[TextData[{
+ "One class of models that we consider here are polynomial in the system \
+positions and velocities.  The following function generates a model and \
+returns ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"{", 
+    RowBox[{"coeffs", ",", " ", "model"}], "}"}], TraditionalForm]]],
+ " where ",
+ Cell[BoxData[
+  FormBox["coeffs", TraditionalForm]]],
+ " is the list of symbolic coefficients (the parameters that will be adjusted \
+by the optimiser) in the model. The model is parameterised by the maximum \
+order of any one variable in the output, ",
+ Cell[BoxData[
+  FormBox["maxO", TraditionalForm]]],
+ ", and the maximum total sum of variable powers in any one term, ",
+ Cell[BoxData[
+  FormBox["trimO", TraditionalForm]]],
+ ". Terms that have no physical relevance like 1, and ",
+ Cell[BoxData[
+  FormBox[
+   RowBox[{
+    SuperscriptBox["q", "n"], "qdot"}], TraditionalForm]]],
+ " are excluded from the model."
+}], "Text",
+ CellChangeTimes->{{3.636206998580735*^9, 3.636207142763463*^9}, {
+  3.6362742756760387`*^9, 3.636274275965893*^9}, {3.639471307836429*^9, 
+  3.639471335583935*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"trimmedPolynomialModel", "[", 
+   RowBox[{"vars_", ",", "maxO_", ",", "trimO_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{
+     "nVars", ",", "varPowers", ",", "trimmedVarPowers", ",", "fullVarList", 
+      ",", "powers", ",", "tPowers", ",", "coeffs"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"nVars", "=", 
+      RowBox[{"2", "*", 
+       RowBox[{"Length", "[", "vars", "]"}]}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"varPowers", "=", 
+      RowBox[{"Flatten", "[", 
+       RowBox[{
+        RowBox[{"Outer", "[", 
+         RowBox[{"List", ",", 
+          RowBox[{"Sequence", "@@", 
+           RowBox[{"Table", "[", 
+            RowBox[{
+             RowBox[{"Range", "[", 
+              RowBox[{"0", ",", "maxO"}], "]"}], ",", 
+             RowBox[{"{", "nVars", "}"}]}], "]"}]}]}], "]"}], ",", 
+        RowBox[{"nVars", "-", "1"}]}], "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"trimmedVarPowers", "=", 
+      RowBox[{"Select", "[", 
+       RowBox[{"varPowers", ",", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"Plus", "@@", "#"}], "<=", "trimO"}], "&"}]}], "]"}]}], ";",
+      "\[IndentingNewLine]", 
+     RowBox[{"fullVarList", "=", 
+      RowBox[{"Flatten", "[", 
+       RowBox[{
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{"#", ",", 
+           RowBox[{"dotVar", "[", "#", "]"}]}], "}"}], "&"}], "/@", "vars"}], 
+       "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"powers", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"Times", "@@", 
+         RowBox[{"(", 
+          SuperscriptBox["fullVarList", "#"], ")"}]}], "&"}], "/@", 
+       "trimmedVarPowers"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"tPowers", "=", 
+      RowBox[{"DeleteCases", "[", 
+       RowBox[{"powers", ",", 
+        RowBox[{"Alternatives", "@@", 
+         RowBox[{"Join", "[", 
+          RowBox[{
+           RowBox[{"{", "1", "}"}], ",", 
+           RowBox[{"Flatten", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"{", 
+               RowBox[{
+                RowBox[{"dotVar", "[", "#", "]"}], ",", 
+                RowBox[{"#", " ", 
+                 RowBox[{"dotVar", "[", "#", "]"}]}], ",", 
+                RowBox[{
+                 SuperscriptBox["#", "_"], 
+                 RowBox[{"dotVar", "[", "#", "]"}]}]}], "}"}], "&"}], "/@", 
+             "vars"}], "]"}]}], "]"}]}]}], "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"coeffs", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"Symbol", "[", 
+         RowBox[{"\"\<c\>\"", "<>", 
+          RowBox[{"ToString", "[", "#", "]"}]}], "]"}], "&"}], "/@", 
+       RowBox[{"Range", "[", 
+        RowBox[{"Length", "[", "tPowers", "]"}], "]"}]}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"{", 
+      RowBox[{"coeffs", ",", 
+       RowBox[{"tPowers", ".", "coeffs"}]}], "}"}]}]}], "\[IndentingNewLine]",
+    "]"}]}]], "Input",
+ CellChangeTimes->{{3.636188618740553*^9, 3.636188786064146*^9}, {
+   3.6361888594551897`*^9, 3.636188862724546*^9}, {3.636193315095962*^9, 
+   3.636193317300798*^9}, {3.6361941005961447`*^9, 3.6361941142122173`*^9}, {
+   3.6361941480995607`*^9, 3.636194195426182*^9}, {3.636194227124453*^9, 
+   3.636194272338216*^9}, {3.636629446293283*^9, 3.636629469188744*^9}, {
+   3.636629521141019*^9, 3.636629521251892*^9}, {3.636629650591103*^9, 
+   3.6366296535600986`*^9}, 3.636629882054109*^9, {3.641210602492919*^9, 
+   3.641210608327937*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Checking solutions", "Subsection",
+ CellChangeTimes->{{3.636210468902063*^9, 3.6362104704868603`*^9}}],
+
+Cell["\<\
+Given a Lagrangian and some vars, generates the equations of motion using the \
+Euler-Lagrange equations. Output in a form suitable for feeding into NDSolve.\
+\
+\>", "Text",
+ CellChangeTimes->{{3.636212192045252*^9, 3.636212230959186*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"generateELEquations", "[", 
+   RowBox[{"vars_", ",", "l_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"toTimeDependent", ",", "toDerivatives", ",", "ltd"}], "}"}], 
+    ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"toTimeDependent", ",", "toDerivatives"}], "}"}], "=", 
+      RowBox[{"generateTransformations", "[", "vars", "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"ltd", "=", 
+      RowBox[{"l", "/.", "toTimeDependent"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"Simplify", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{
+           RowBox[{"D", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"D", "[", 
+               RowBox[{"ltd", ",", 
+                RowBox[{
+                 RowBox[{"dotVar", "[", "#", "]"}], "[", "t", "]"}]}], "]"}], 
+              "/.", "toDerivatives"}], ",", "t"}], "]"}], "==", 
+           RowBox[{"D", "[", 
+            RowBox[{"ltd", ",", 
+             RowBox[{"#", "[", "t", "]"}]}], "]"}]}], "/.", "toDerivatives"}],
+          ")"}], "&"}], "/@", "vars"}], "]"}]}]}], "\[IndentingNewLine]", 
+   "]"}]}]], "Input",
+ CellChangeTimes->{{3.634371664255287*^9, 3.634371721034388*^9}, {
+   3.634371827914806*^9, 3.6343718641184998`*^9}, {3.634371923599806*^9, 
+   3.634371934323081*^9}, {3.6343720242135353`*^9, 3.634372110752654*^9}, {
+   3.634383893046937*^9, 3.6343838988352947`*^9}, 3.6354980447906923`*^9, {
+   3.635624712375012*^9, 3.63562472329525*^9}, {3.6362105384094973`*^9, 
+   3.636210546754023*^9}, {3.636210915206315*^9, 3.6362110030583973`*^9}, 
+   3.636211124423401*^9, {3.63621115482126*^9, 3.636211201554738*^9}}],
+
+Cell["\<\
+Generates EL equations using the above and solves them. Many (most?) \
+Lagrangians will yield equations that can\[CloseCurlyQuote]t be solved, so \
+this function tries to take care of NDSolve failures and returns zeroed \
+solutions in this case.\
+\>", "Text",
+ CellChangeTimes->{{3.636361101615443*^9, 3.6363611721283903`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"solveEL", "[", 
+   RowBox[{
+   "vars_", ",", "l_", ",", "initialConds_", ",", "tStart_", ",", "tEnd_"}], 
+   "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", "elEq", "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"elEq", "=", 
+      RowBox[{"generateELEquations", "[", 
+       RowBox[{"vars", ",", "l"}], "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"Quiet", "[", 
+      RowBox[{"Check", "[", "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"NDSolve", "[", 
+         RowBox[{
+          RowBox[{"Join", "[", 
+           RowBox[{"elEq", ",", "initialConds"}], "]"}], ",", "vars", ",", 
+          RowBox[{"{", 
+           RowBox[{"t", ",", "tStart", ",", "tEnd"}], "}"}]}], "]"}], ",", 
+        "\[IndentingNewLine]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{
+           RowBox[{"#", "\[Rule]", 
+            RowBox[{"Function", "[", "0", "]"}]}], "&"}], "/@", "vars"}], 
+         "}"}]}], " ", 
+       RowBox[{"(*", 
+        RowBox[{"If", ",", " ", 
+         RowBox[{"for", " ", "whatever", " ", "reason"}], ",", " ", 
+         RowBox[{
+         "NDSolve", " ", "fails", " ", "return", " ", "constant", " ", "0", 
+          " ", "for", " ", "all", " ", "vars"}]}], "*)"}], 
+       "\[IndentingNewLine]", "]"}], "]"}]}]}], "\[IndentingNewLine]", 
+   "]"}]}]], "Input",
+ CellChangeTimes->{{3.6362115205338383`*^9, 3.6362115408610163`*^9}, {
+  3.636211613784956*^9, 3.636211638706352*^9}, {3.6362116689890013`*^9, 
+  3.636211789988*^9}, {3.6362118410406733`*^9, 3.636211974479169*^9}, {
+  3.636217408522561*^9, 3.6362174133782873`*^9}, {3.63621760852839*^9, 
+  3.636217608637472*^9}, {3.636276051490342*^9, 3.636276148745994*^9}, {
+  3.6362762761665382`*^9, 3.6362762850965242`*^9}, {3.6362763607480917`*^9, 
+  3.6362763860196323`*^9}, {3.6362764471165047`*^9, 3.6362764503958893`*^9}, {
+  3.6362765393570642`*^9, 3.636276541633486*^9}}],
+
+Cell[TextData[{
+ "Uses a solution, likely generated by the above and calculates a ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["\[Chi]", "2"], TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "value for the in sample prediction error, i.e. ",
+ Cell[BoxData[
+  FormBox[
+   SuperscriptBox["\[Chi]", "2"], TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "of the predictions with respect to the training data."
+}], "Text",
+ CellChangeTimes->{{3.636361219350279*^9, 3.63636126359689*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"inSamplePredictionErrorSingle", "[", 
+   RowBox[{
+   "vars_", ",", "prediction_", ",", "data_", ",", "tTrain_", ",", "tStep_"}],
+    "]"}], ":=", 
+  RowBox[{"Plus", "@@", 
+   RowBox[{"(", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"Plus", "@@", 
+       SuperscriptBox[
+        RowBox[{"(", 
+         RowBox[{
+          RowBox[{"Table", "[", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"(", 
+              RowBox[{"#", "/.", 
+               RowBox[{
+               "prediction", "\[LeftDoubleBracket]", "1", 
+                "\[RightDoubleBracket]"}]}], ")"}], "[", "t", "]"}], ",", 
+            RowBox[{"{", 
+             RowBox[{"t", ",", "0", ",", "tTrain", ",", "tStep"}], "}"}]}], 
+           "]"}], "-", 
+          RowBox[{"(", 
+           RowBox[{"#", "/.", "data"}], ")"}]}], ")"}], "2"]}], "&"}], "/@", 
+     "vars"}], ")"}]}]}]], "Input",
+ CellChangeTimes->{{3.6362749010504*^9, 3.6362750946592293`*^9}, {
+  3.640437179122944*^9, 3.640437190986917*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"inSamplePredictionError", "[", 
+   RowBox[{
+   "vars_", ",", "predictions_", ",", "data_", ",", "tTrain_", ",", 
+    "tStep_"}], "]"}], ":=", 
+  RowBox[{"Plus", "@@", 
+   RowBox[{"MapThread", "[", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"inSamplePredictionErrorSingle", "[", 
+       RowBox[{"vars", ",", "#1", ",", "#2", ",", "tTrain", ",", "tStep"}], 
+       "]"}], "&"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"predictions", ",", "data"}], "}"}]}], "]"}]}]}]], "Input",
+ CellChangeTimes->{{3.6362749010504*^9, 3.6362750946592293`*^9}, {
+  3.640437179122944*^9, 3.6404372246596212`*^9}, {3.6404397438073807`*^9, 
+  3.640439744288773*^9}, {3.640442068206821*^9, 3.640442090763867*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Search driver", "Subsection",
+ CellChangeTimes->{{3.636211028042451*^9, 3.6362110341841288`*^9}}],
+
+Cell["\<\
+These variables are adjusted by the solver as it loops over possible model \
+orders and are useful for keeping track of the solver\[CloseCurlyQuote]s \
+progress.\
+\>", "Text",
+ CellChangeTimes->{{3.636361270096612*^9, 3.636361306591981*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"maxOrder", "=", "0"}], ";", 
+  RowBox[{"trimOrder", "=", "0"}], ";"}]], "Input",
+ CellChangeTimes->{{3.636287890677033*^9, 3.636287896986743*^9}}],
+
+Cell["\<\
+Optimises a trimmed polynomial model of the given max order and trim order. \
+Once the model is optimised it will generate a prediction, using the given \
+initial conditions, and calculate an in-sample prediction error. For \
+convenience the prediction is calculated until the end of the validation \
+window, so that it can be re-used for validation, but note that this function \
+does not have access to the validation data, and this portion of the \
+prediction is not used. Returns the best coefficients, the optimised model, \
+the model\[CloseCurlyQuote]s prediction, and various metrics.\
+\>", "Text",
+ CellChangeTimes->{{3.636361309999927*^9, 3.6363614074712152`*^9}, {
+  3.636361854001803*^9, 3.636361878682693*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"optimiseTrimmedPolynomial", "[", 
+   RowBox[{
+   "vars_", ",", "data_", ",", "initialConds_", ",", "tTrain_", ",", "tMax_", 
+    ",", "tStep_", ",", "maxO_", ",", "trimO_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{
+     "coeffs", ",", "model", ",", "sol", ",", "predictions", ",", "predErr"}],
+      "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"maxOrder", "=", "maxO"}], ";", 
+     RowBox[{"trimOrder", "=", "trimO"}], ";", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"coeffs", ",", "model"}], "}"}], "=", 
+      RowBox[{"trimmedPolynomialModel", "[", 
+       RowBox[{"vars", ",", "maxO", ",", "trimO"}], "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"sol", "=", 
+      RowBox[{"optimiseLagrangian", "[", 
+       RowBox[{
+       "vars", ",", "data", ",", "model", ",", "coeffs", ",", "tTrain", ",", 
+        "tStep"}], "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"predictions", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"solveEL", "[", 
+         RowBox[{"vars", ",", 
+          RowBox[{"\"\<model\>\"", "/.", "sol"}], ",", "#", ",", "0", ",", 
+          "tMax"}], "]"}], "&"}], "/@", "initialConds"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"predErr", "=", 
+      RowBox[{"inSamplePredictionError", "[", 
+       RowBox[{
+       "vars", ",", "predictions", ",", "data", ",", "tTrain", ",", "tStep"}],
+        "]"}]}], ";", "\[IndentingNewLine]", 
+     RowBox[{"Join", "[", 
+      RowBox[{"sol", ",", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"\"\<inSamplePredictionError\>\"", "\[Rule]", "predErr"}], 
+         ",", 
+         RowBox[{"\"\<predictions\>\"", "\[Rule]", "predictions"}], ",", 
+         RowBox[{"\"\<trimOrder\>\"", "\[Rule]", "trimO"}], ",", 
+         RowBox[{"\"\<maxOrder\>\"", "\[Rule]", "maxO"}]}], "}"}]}], 
+      "]"}]}]}], "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.636274026270982*^9, 3.636274111135746*^9}, {
+   3.6362741534262037`*^9, 3.636274168167046*^9}, 3.6362752772846403`*^9, {
+   3.6362756426621017`*^9, 3.636275829188457*^9}, {3.636286301195176*^9, 
+   3.63628632298351*^9}, {3.640442027625424*^9, 3.640442045337103*^9}, {
+   3.640442146988236*^9, 3.6404421478178864`*^9}, {3.6404422751503887`*^9, 
+   3.640442276105558*^9}}],
+
+Cell[TextData[{
+ "Here we pre-calculate a list of orders that we are going to search over, \
+for each number of variables. We search in order of number-of-parameters that \
+the model has. We only consider models with max order less than ",
+ Cell[BoxData[
+  FormBox["maxSearchOrder", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ ", max trim order less than ",
+ Cell[BoxData[
+  FormBox["maxTrimCheckLevel", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ " and that result in a number of parameters less than ",
+ Cell[BoxData[
+  FormBox["maxCoeffNumber", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ ". We generate search lists for numbers-of-variables up to ",
+ Cell[BoxData[
+  FormBox["maxVars", TraditionalForm]],
+  FormatType->"TraditionalForm"],
+ "."
+}], "Text",
+ CellChangeTimes->{{3.636361417191028*^9, 3.636361551809821*^9}}],
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"maxSearchOrder", "=", "6"}], ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"maxTrimCheckLevel", "=", "8"}], ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"maxCoeffNumber", "=", "100"}], ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"maxVars", "=", "3"}], ";"}]}], "Input",
+ CellChangeTimes->{{3.636360519805788*^9, 3.6363605624897957`*^9}, {
+   3.636360681247003*^9, 3.6363607231966963`*^9}, 3.636360769445915*^9, {
+   3.636360900632572*^9, 3.636360920759471*^9}, {3.636362617828108*^9, 
+   3.6363626183539658`*^9}, 3.636627677510365*^9, {3.636629600937582*^9, 
+   3.6366296021012783`*^9}, {3.6404426173901453`*^9, 3.640442619323291*^9}, {
+   3.64044294436863*^9, 3.640442944476898*^9}, {3.640443531990115*^9, 
+   3.640443533618532*^9}, {3.640443809904142*^9, 3.640443811413306*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"makeSearchOrder", "[", "numVars_", "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"possibleOrders", ",", "sizedOrders"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"possibleOrders", "=", 
+      RowBox[{"Flatten", "[", 
+       RowBox[{
+        RowBox[{
+         RowBox[{"Function", "[", 
+          RowBox[{"i", ",", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"i", ",", "#"}], "}"}], "&"}], "/@", 
+            RowBox[{"Range", "[", 
+             RowBox[{"i", ",", 
+              RowBox[{"Min", "[", 
+               RowBox[{"maxTrimCheckLevel", ",", 
+                RowBox[{"2", "*", "i", "*", "numVars"}]}], "]"}]}], "]"}]}]}],
+           "]"}], "/@", 
+         RowBox[{"Range", "[", 
+          RowBox[{"2", ",", "maxSearchOrder"}], "]"}]}], ",", "1"}], "]"}]}], 
+     ";", "\[IndentingNewLine]", 
+     RowBox[{"sizedOrders", "=", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"{", 
+         RowBox[{"#", ",", 
+          RowBox[{"Length", "[", 
+           RowBox[{"First", "[", 
+            RowBox[{"trimmedPolynomialModel", "[", 
+             RowBox[{
+              RowBox[{
+               RowBox[{
+                RowBox[{"Unique", "[", "]"}], "&"}], "/@", 
+               RowBox[{"Range", "[", "numVars", "]"}]}], ",", 
+              RowBox[{
+              "#", "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}], 
+              ",", 
+              RowBox[{
+              "#", "\[LeftDoubleBracket]", "2", "\[RightDoubleBracket]"}]}], 
+             "]"}], "]"}], "]"}]}], "}"}], "&"}], "/@", "possibleOrders"}]}], 
+     ";", "\[IndentingNewLine]", 
+     RowBox[{"First", "/@", 
+      RowBox[{"SortBy", "[", 
+       RowBox[{
+        RowBox[{"Select", "[", 
+         RowBox[{"sizedOrders", ",", 
+          RowBox[{
+           RowBox[{
+            RowBox[{
+            "#", "\[LeftDoubleBracket]", "2", "\[RightDoubleBracket]"}], "<", 
+            "maxCoeffNumber"}], "&"}]}], "]"}], ",", "Last"}], "]"}]}]}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.6363602906131973`*^9, 3.636360517816978*^9}, {
+  3.6363605692875557`*^9, 3.6363606677355957`*^9}, {3.6363607293344507`*^9, 
+  3.636360739938938*^9}, {3.636360850899757*^9, 3.636360851459795*^9}, {
+  3.6363609766406384`*^9, 3.636360977958642*^9}}],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"searchOrders", "=", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"#", "\[Rule]", 
+     RowBox[{"makeSearchOrder", "[", "#", "]"}]}], "&"}], "/@", 
+   RowBox[{"Range", "[", 
+    RowBox[{"1", ",", "maxVars"}], "]"}]}]}]], "Input",
+ CellChangeTimes->{{3.636360343699898*^9, 3.636360349716776*^9}, {
+  3.636360689271793*^9, 3.636360689355217*^9}, {3.636360745485775*^9, 
+  3.636360778951293*^9}, {3.636360874769677*^9, 3.636360892003647*^9}, {
+  3.636360932002944*^9, 3.6363609712279863`*^9}}],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{
+   RowBox[{"1", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"5", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"6", ",", "8"}], "}"}]}], "}"}]}], ",", 
+   RowBox[{"2", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "5"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"4", ",", "4"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "6"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "7"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "8"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "5"}], "}"}]}], "}"}]}], ",", 
+   RowBox[{"3", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"{", 
+       RowBox[{"2", ",", "2"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"2", ",", "3"}], "}"}], ",", 
+      RowBox[{"{", 
+       RowBox[{"3", ",", "3"}], "}"}]}], "}"}]}]}], "}"}]], "Output",
+ CellChangeTimes->{{3.6363603502776318`*^9, 3.63636039155123*^9}, {
+   3.63636062365694*^9, 3.636360692619956*^9}, {3.636360743421423*^9, 
+   3.636360779416822*^9}, {3.636360854713173*^9, 3.636360922658702*^9}, {
+   3.636360956460669*^9, 3.6363609794924097`*^9}, 3.636362629140317*^9, {
+   3.636627674413361*^9, 3.63662768093854*^9}, {3.636629582764166*^9, 
+   3.636629604632142*^9}, 3.639380977578619*^9, 3.639921506953375*^9, 
+   3.6402414019812202`*^9, 3.6404275031099873`*^9, 3.640442623112652*^9, 
+   3.640442950188902*^9, 3.640443536966495*^9, 3.6404438157818623`*^9, 
+   3.64121058968609*^9, 3.6412913322057667`*^9, 3.641630161831411*^9, 
+   3.642159399325007*^9}]
+}, Open  ]],
+
+Cell["\<\
+This function pulls everything together, and loops over the search orders, \
+finding the (possibly) best set of parameters for each order. If an optimised \
+model has an in-sample prediction error less than the given threshold then \
+the search is terminated. The function returns a list of results for each \
+order searched.\
+\>", "Text",
+ CellChangeTimes->{{3.636361558570883*^9, 3.636361567327011*^9}, {
+  3.6363616391913567`*^9, 3.63636170343988*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"findTPLagrangian", "[", 
+   RowBox[{
+   "vars_", ",", "data_", ",", "initialConds_", ",", 
+    "predictionErrorThreshold_", ",", "tTrain_", ",", "tMax_", ",", 
+    "tStep_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{"orders", ",", "searchResults", ",", "sol"}], "}"}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"orders", "=", 
+      RowBox[{
+       RowBox[{"Length", "[", "vars", "]"}], "/.", "searchOrders"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"searchResults", "=", 
+      RowBox[{"Reap", "[", "\[IndentingNewLine]", 
+       RowBox[{
+        RowBox[{"For", "[", 
+         RowBox[{
+          RowBox[{"i", "=", "1"}], ",", 
+          RowBox[{"i", "\[LessEqual]", 
+           RowBox[{"Length", "[", "orders", "]"}]}], ",", 
+          RowBox[{"i", "++"}], ",", "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{"sol", "=", 
+            RowBox[{"optimiseTrimmedPolynomial", "[", 
+             RowBox[{
+             "vars", ",", "data", ",", "initialConds", ",", "tTrain", ",", 
+              "tMax", ",", "tStep", ",", 
+              RowBox[{
+               RowBox[{
+               "orders", "\[LeftDoubleBracket]", "i", 
+                "\[RightDoubleBracket]"}], "\[LeftDoubleBracket]", "1", 
+               "\[RightDoubleBracket]"}], ",", 
+              RowBox[{
+               RowBox[{
+               "orders", "\[LeftDoubleBracket]", "i", 
+                "\[RightDoubleBracket]"}], "\[LeftDoubleBracket]", "2", 
+               "\[RightDoubleBracket]"}]}], "]"}]}], ";", 
+           "\[IndentingNewLine]", 
+           RowBox[{"Sow", "[", "sol", "]"}], ";", "\[IndentingNewLine]", 
+           RowBox[{"If", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"(", 
+               RowBox[{"\"\<inSamplePredictionError\>\"", "/.", "sol"}], 
+               ")"}], "<", "predictionErrorThreshold"}], ",", 
+             RowBox[{"Break", "[", "]"}]}], "]"}], ";"}]}], 
+         "\[IndentingNewLine]", "]"}], ";"}], "\[IndentingNewLine]", "]"}]}], 
+     ";", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{
+      "searchResults", "\[LeftDoubleBracket]", "2", "\[RightDoubleBracket]"}],
+       "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]}]}], 
+   "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.6361857951291437`*^9, 3.636185819797735*^9}, {
+  3.636275290124851*^9, 3.636275313553171*^9}, {3.636285785297323*^9, 
+  3.636285836998683*^9}, {3.636285892038333*^9, 3.636285941249902*^9}, {
+  3.6362881422495623`*^9, 3.6362881435800247`*^9}, {3.6362936404609737`*^9, 
+  3.636293793776349*^9}, {3.636294124758192*^9, 3.636294138348145*^9}}],
+
+Cell["\<\
+Pick out the \[OpenCurlyDoubleQuote]best\[CloseCurlyDoubleQuote] model, that \
+is the simplest model that has an in-sample prediction error less than the \
+threshold. Usually this threshold will be the same as that used above, so \
+this function will always pick out the last order, if the search converged. \
+If the search failed to converge throws up a message.\
+\>", "Text",
+ CellChangeTimes->{{3.636361710762491*^9, 3.636361768420416*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"pickBestTPLagrangian", "::", "noconvergence"}], "=", 
+   "\"\<Failed to converge in any search order.\>\""}], ";"}]], "Input",
+ CellChangeTimes->{{3.636361795601157*^9, 3.6363618135466423`*^9}, 
+   3.6363635957983828`*^9}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"pickBestTPLagrangian", "[", 
+   RowBox[{"opt_", ",", "predictionErrorThreshold_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", "valid", "}"}], ",", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"valid", "=", 
+      RowBox[{"Select", "[", 
+       RowBox[{"opt", ",", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"(", 
+           RowBox[{"\"\<inSamplePredictionError\>\"", "/.", "#"}], ")"}], "<",
+           "predictionErrorThreshold"}], "&"}]}], "]"}]}], ";", 
+     "\[IndentingNewLine]", 
+     RowBox[{"If", "[", 
+      RowBox[{
+       RowBox[{
+        RowBox[{"Length", "[", "valid", "]"}], ">", "0"}], ",", 
+       RowBox[{"First", "[", "valid", "]"}], ",", 
+       RowBox[{"Message", "[", 
+        RowBox[{"pickBestTPLagrangian", "::", "noconvergence"}], "]"}]}], 
+      "]"}]}]}], "\[IndentingNewLine]", "]"}]}]], "Input",
+ CellChangeTimes->{{3.63628692581144*^9, 3.6362870344146147`*^9}, {
+   3.636293627983477*^9, 3.636293628400982*^9}, 3.63629371788482*^9, {
+   3.636361822669014*^9, 3.636361836012515*^9}}]
+}, Open  ]]
+}, Open  ]]
+},
+WindowSize->{1046, 684},
+WindowMargins->{{Automatic, 157}, {Automatic, 52}},
+FrontEndVersion->"10.1 for Mac OS X x86 (32-bit, 64-bit Kernel) (March 23, \
+2015)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 106, 1, 92, "Title"],
+Cell[689, 25, 173, 4, 30, "Text"],
+Cell[CellGroupData[{
+Cell[887, 33, 116, 1, 44, "Subsection"],
+Cell[1006, 36, 790, 13, 163, "Text"],
+Cell[1799, 51, 513, 13, 46, "Input"],
+Cell[2315, 66, 843, 15, 126, "Text"],
+Cell[3161, 83, 1397, 35, 114, "Input"],
+Cell[4561, 120, 343, 6, 49, "Text"],
+Cell[4907, 128, 1756, 43, 153, "Input"],
+Cell[6666, 173, 199, 4, 30, "Text"],
+Cell[6868, 179, 1854, 46, 154, "Input"],
+Cell[8725, 227, 183, 4, 30, "Text"],
+Cell[8911, 233, 314, 9, 36, "Input"],
+Cell[9228, 244, 896, 21, 109, "Text"],
+Cell[10127, 267, 1299, 33, 80, "Input"],
+Cell[11429, 302, 1176, 26, 145, "Text"],
+Cell[12608, 330, 1607, 39, 80, "Input"],
+Cell[14218, 371, 738, 20, 52, "Text"],
+Cell[14959, 393, 2868, 60, 119, "Input"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[17864, 458, 112, 1, 44, "Subsection"],
+Cell[17979, 461, 254, 5, 49, "Text"],
+Cell[18236, 468, 436, 10, 28, "Input"],
+Cell[18675, 480, 1912, 34, 185, "Text"],
+Cell[20590, 516, 7716, 147, 355, "Input"],
+Cell[28309, 665, 541, 9, 49, "Text"],
+Cell[28853, 676, 1030, 27, 97, "Input"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[29920, 708, 106, 1, 44, "Subsection"],
+Cell[30029, 711, 1097, 28, 91, "Text"],
+Cell[31129, 741, 3509, 89, 212, "Input"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[34675, 835, 108, 1, 44, "Subsection"],
+Cell[34786, 838, 249, 5, 49, "Text"],
+Cell[35038, 845, 1776, 42, 97, "Input"],
+Cell[36817, 889, 337, 6, 49, "Text"],
+Cell[37157, 897, 1933, 44, 131, "Input"],
+Cell[39093, 943, 496, 13, 51, "Text"],
+Cell[39592, 958, 1015, 29, 51, "Input"],
+Cell[40610, 989, 723, 17, 46, "Input"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[41370, 1011, 103, 1, 44, "Subsection"],
+Cell[41476, 1014, 251, 5, 30, "Text"],
+Cell[41730, 1021, 181, 4, 28, "Input"],
+Cell[41914, 1027, 732, 11, 87, "Text"],
+Cell[42649, 1040, 2380, 54, 165, "Input"],
+Cell[45032, 1096, 855, 21, 70, "Text"],
+Cell[45890, 1119, 834, 15, 80, "Input"],
+Cell[46727, 1136, 2375, 62, 114, "Input"],
+Cell[CellGroupData[{
+Cell[49127, 1202, 504, 11, 28, "Input"],
+Cell[49634, 1215, 3083, 87, 63, "Output"]
+}, Open  ]],
+Cell[52732, 1305, 465, 8, 68, "Text"],
+Cell[53200, 1315, 2701, 62, 216, "Input"],
+Cell[55904, 1379, 453, 7, 68, "Text"],
+Cell[56360, 1388, 269, 6, 28, "Input"],
+Cell[56632, 1396, 1089, 27, 80, "Input"]
+}, Open  ]]
+}, Open  ]]
+}
+]
+*)
+
+(* End of internal cache information *)
